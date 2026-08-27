@@ -1,15 +1,20 @@
 /*
  * Flight Orbit 3D Card for Home Assistant
- * Version 1.0.0
+ * Version 1.0.1
  *
  * Data source: AlexandrErohin/home-assistant-flightradar24
  * Map renderer: MapLibre GL JS 6.6.0 (loaded at runtime)
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.0.1";
 const MAPLIBRE_VERSION = "6.6.0";
-const MAPLIBRE_MODULE = `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.mjs`;
+const MAPLIBRE_MODULES = [
+  `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.mjs`,
+  `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.mjs`,
+];
 const MAPLIBRE_CSS = `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css`;
+const MODULE_LOAD_TIMEOUT_MS = 12000;
+const MAP_BOOT_TIMEOUT_MS = 18000;
 const EMPTY_COLLECTION = Object.freeze({ type: "FeatureCollection", features: [] });
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -72,6 +77,7 @@ class FlightOrbit3DCard extends HTMLElement {
     this._resizeObserver = null;
     this._documentVisibilityHandler = null;
     this._statusTimer = null;
+    this._bootTimer = null;
   }
 
   connectedCallback() {
@@ -138,6 +144,7 @@ class FlightOrbit3DCard extends HTMLElement {
     this._stopMotion();
     this._stopInterpolation();
     if (this._statusTimer) clearTimeout(this._statusTimer);
+    if (this._bootTimer) clearTimeout(this._bootTimer);
     if (this._resizeObserver) this._resizeObserver.disconnect();
     if (this._documentVisibilityHandler) {
       document.removeEventListener("visibilitychange", this._documentVisibilityHandler);
@@ -344,7 +351,7 @@ class FlightOrbit3DCard extends HTMLElement {
       if (!globalThis.WebGLRenderingContext) {
         throw new Error("This device does not support WebGL.");
       }
-      const module = await import(MAPLIBRE_MODULE);
+      const module = await this._loadMapLibre();
       this._maplibre = module;
       if (!this.isConnected) return;
 
@@ -364,7 +371,10 @@ class FlightOrbit3DCard extends HTMLElement {
       });
 
       this._map.addControl(new module.NavigationControl({ visualizePitch: true }), "bottom-right");
-      this._map.on("load", () => this._onMapLoad());
+      // The full `load` event waits for every visible tile. A slow or blocked
+      // third-party tile server can therefore leave the boot shade up forever.
+      // `style.load` is sufficient for installing our sources and layers.
+      this._map.once("style.load", () => this._onMapLoad());
       this._map.on("error", (event) => {
         const message = event?.error?.message || "Map tile error";
         if (!/abort|cancel/i.test(message)) this._setStatus(message, true, 3500);
@@ -383,12 +393,42 @@ class FlightOrbit3DCard extends HTMLElement {
         }
       };
       document.addEventListener("visibilitychange", this._documentVisibilityHandler);
+
+      this._bootTimer = setTimeout(() => {
+        if (this._mapReady) return;
+        if (this._map?.isStyleLoaded()) {
+          this._onMapLoad();
+          return;
+        }
+        if (bootText) bootText.textContent = "MAP RESOURCES TIMED OUT";
+        this._setStatus("Map startup timed out. Check access to the map-resource domains.", true, 0);
+      }, MAP_BOOT_TIMEOUT_MS);
     } catch (error) {
       if (bootText) bootText.textContent = `MAP FAILED: ${error.message}`;
       this._setStatus("MapLibre could not load. Check this dashboard device has internet access.", true, 0);
     } finally {
       this._booting = false;
     }
+  }
+
+  async _loadMapLibre() {
+    let lastError = null;
+    for (const url of MAPLIBRE_MODULES) {
+      let timer = null;
+      try {
+        return await Promise.race([
+          import(url),
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`Timed out loading ${new URL(url).hostname}`)), MODULE_LOAD_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (error) {
+        lastError = error;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    throw lastError || new Error("MapLibre could not be downloaded.");
   }
 
   _buildMapStyle(mode) {
@@ -425,6 +465,11 @@ class FlightOrbit3DCard extends HTMLElement {
   }
 
   _onMapLoad() {
+    if (this._mapReady) return;
+    if (this._bootTimer) {
+      clearTimeout(this._bootTimer);
+      this._bootTimer = null;
+    }
     this._mapReady = true;
     this._installAircraftImages();
     this._installFlightLayers();
