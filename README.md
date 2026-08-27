@@ -121,6 +121,7 @@ Do not reduce the FlightRadar24 integration scan interval aggressively. FlightRa
 The card loads MapLibre GL JS at runtime and uses third-party map and terrain services. The dashboard device must be able to reach:
 
 - `unpkg.com`
+- `cdn.jsdelivr.net` (fallback if unpkg is unavailable)
 - `tiles.mapterhorn.com`
 - `server.arcgisonline.com`
 - `basemaps.cartocdn.com`
@@ -143,6 +144,7 @@ Confirm the entity currently has a populated `flights` attribute. The integratio
 ### MapLibre could not load
 
 Confirm the dashboard device can access the external map-resource domains listed above.
+Version 1.0.1 and later stop the loading animation and report which startup stage failed.
 
 ## Data and safety
 
