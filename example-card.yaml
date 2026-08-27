@@ -1,0 +1,17 @@
+type: custom:flight-orbit-3d-card
+entity: sensor.flightradar24_current_in_area
+title: AIR TRAFFIC // SYDNEY
+height: 700
+map_style: satellite
+show_ground: false
+show_tracks: true
+show_labels: true
+actual_altitude: true
+terrain: true
+auto_orbit: true
+auto_return_seconds: 0
+focus_zoom: 10.8
+focus_pitch: 72
+orbit_seconds: 18
+overview_pitch: 56
+max_track_points: 160
