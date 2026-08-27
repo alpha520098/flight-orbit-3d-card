@@ -1,14 +1,14 @@
 /*
  * Flight Orbit 3D Card for Home Assistant
- * Version 1.0.2
+ * Version 1.0.3
  *
  * Data source: AlexandrErohin/home-assistant-flightradar24
- * Map renderer: MapLibre GL JS 6.6.0 (bundled)
+ * Map renderer: MapLibre GL JS 5.6.0 (bundled single-file build)
  */
 
-const CARD_VERSION = "1.0.2";
+const CARD_VERSION = "1.0.3";
 const MAPLIBRE_CSS_TEXT = "__MAPLIBRE_CSS__";
-const MAP_BOOT_TIMEOUT_MS = 10000;
+const MAP_BOOT_TIMEOUT_MS = 8000;
 const EMPTY_COLLECTION = Object.freeze({ type: "FeatureCollection", features: [] });
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -72,7 +72,7 @@ class FlightOrbit3DCard extends HTMLElement {
     this._documentVisibilityHandler = null;
     this._statusTimer = null;
     this._bootTimer = null;
-    this._terrainFallback = false;
+    this._terrainEnabled = false;
   }
 
   connectedCallback() {
@@ -109,7 +109,7 @@ class FlightOrbit3DCard extends HTMLElement {
     this._showTracks = Boolean(this._config.show_tracks);
     this._showLabels = Boolean(this._config.show_labels);
     this._mapStyle = this._config.map_style === "dark" ? "dark" : "satellite";
-    this._terrainFallback = false;
+    this._terrainEnabled = false;
 
     if (!this.shadowRoot.firstChild) {
       this._renderShell();
@@ -196,6 +196,7 @@ class FlightOrbit3DCard extends HTMLElement {
           background: conic-gradient(from 0deg, transparent 0 78%, rgba(89,220,255,.95));
           animation: spin 1.2s linear infinite;
         }
+        .radar-loader.stopped { animation: none; background: none; border-color: var(--red); }
         @keyframes spin { to { transform: rotate(360deg); } }
         .scanlines {
           z-index: 3;
@@ -294,7 +295,7 @@ class FlightOrbit3DCard extends HTMLElement {
         <section id="detail" class="detail"></section>
         <div id="status" class="status"></div>
         <div class="legend"><i style="background:#59dcff"></i>AIRBORNE <i style="background:#ffc65c"></i>GROUND <i style="background:#ff4d5e"></i>EMERGENCY</div>
-        <div id="boot" class="boot-shade"><div class="boot-box"><div class="radar-loader"></div><div id="boot-text">LOADING 3D AIRSPACE</div></div></div>
+        <div id="boot" class="boot-shade"><div class="boot-box"><div class="radar-loader"></div><div id="boot-text">LOADING AIRSPACE v${CARD_VERSION}</div></div></div>
       </ha-card>
     `;
 
@@ -338,16 +339,17 @@ class FlightOrbit3DCard extends HTMLElement {
     this._booting = true;
     const bootText = this.shadowRoot.getElementById("boot-text");
     const boot = this.shadowRoot.getElementById("boot");
-    if (bootText) bootText.textContent = "LOADING 3D AIRSPACE";
+    if (bootText) bootText.textContent = `LOADING AIRSPACE v${CARD_VERSION}`;
     if (boot) {
       boot.style.display = "grid";
       boot.classList.remove("ready");
     }
+    this._armBootTimeout(bootText);
     try {
       if (!globalThis.WebGLRenderingContext) {
         throw new Error("This device does not support WebGL.");
       }
-      const module = await globalThis.maplibreglReady;
+      const module = globalThis.maplibregl;
       if (!module?.Map) throw new Error("Bundled MapLibre failed to initialise.");
       this._maplibre = module;
       if (!this.isConnected) return;
@@ -391,9 +393,10 @@ class FlightOrbit3DCard extends HTMLElement {
       };
       document.addEventListener("visibilitychange", this._documentVisibilityHandler);
 
-      this._armBootTimeout(bootText);
     } catch (error) {
+      if (this._bootTimer) clearTimeout(this._bootTimer);
       if (bootText) bootText.textContent = `MAP FAILED: ${error.message}`;
+      this.shadowRoot.querySelector(".radar-loader")?.classList.add("stopped");
       this._setStatus("MapLibre could not load. Check this dashboard device has internet access.", true, 0);
     } finally {
       this._booting = false;
@@ -408,22 +411,14 @@ class FlightOrbit3DCard extends HTMLElement {
         this._onMapLoad();
         return;
       }
-      if (this._config.terrain !== false && !this._terrainFallback && this._map) {
-        this._terrainFallback = true;
-        if (bootText) bootText.textContent = "TERRAIN UNAVAILABLE — LOADING MAP";
-        this._map.once("style.load", () => this._onMapLoad());
-        this._map.setStyle(this._buildMapStyle(this._mapStyle));
-        this._armBootTimeout(bootText);
-        return;
-      }
-      if (bootText) bootText.textContent = "MAP RESOURCES TIMED OUT";
+      if (bootText) bootText.textContent = `MAP STARTUP FAILED — v${CARD_VERSION}`;
+      this.shadowRoot.querySelector(".radar-loader")?.classList.add("stopped");
       this._setStatus("Map startup timed out. Check access to the map-resource domains.", true, 0);
     }, MAP_BOOT_TIMEOUT_MS);
   }
 
   _buildMapStyle(mode) {
     const satellite = mode === "satellite";
-    const terrainEnabled = this._config.terrain !== false && !this._terrainFallback;
     const baseTiles = satellite
       ? ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
       : ["https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png", "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"];
@@ -445,15 +440,6 @@ class FlightOrbit3DCard extends HTMLElement {
       ],
       sky: {},
     };
-    if (terrainEnabled) {
-      style.sources.terrainSource = {
-        type: "raster-dem",
-        url: "https://tiles.mapterhorn.com/tilejson.json",
-        tileSize: 512,
-      };
-      style.layers.push({ id: "terrain-shade", type: "hillshade", source: "terrainSource", paint: { "hillshade-exaggeration": satellite ? 0.32 : 0.55, "hillshade-shadow-color": "#03101a", "hillshade-highlight-color": satellite ? "#9fcde4" : "#4b8da6" } });
-      style.terrain = { source: "terrainSource", exaggeration: 1.15 };
-    }
     return style;
   }
 
@@ -463,17 +449,52 @@ class FlightOrbit3DCard extends HTMLElement {
       clearTimeout(this._bootTimer);
       this._bootTimer = null;
     }
-    this._mapReady = true;
-    this._installAircraftImages();
-    this._installFlightLayers();
-    this._applyData();
-    this._showOverview(false);
-    const boot = this.shadowRoot.getElementById("boot");
-    boot?.classList.add("ready");
-    setTimeout(() => {
-      if (boot) boot.style.display = "none";
-    }, 500);
-    this._setStatus("3D AIRSPACE ONLINE", false, 1800);
+    try {
+      this._installAircraftImages();
+      this._installFlightLayers();
+      this._mapReady = true;
+      this._applyData();
+      this._showOverview(false);
+      this._enableTerrain();
+      const boot = this.shadowRoot.getElementById("boot");
+      boot?.classList.add("ready");
+      setTimeout(() => {
+        if (boot) boot.style.display = "none";
+      }, 500);
+      this._setStatus("3D AIRSPACE ONLINE", false, 1800);
+    } catch (error) {
+      this._mapReady = false;
+      const bootText = this.shadowRoot.getElementById("boot-text");
+      if (bootText) bootText.textContent = `MAP SETUP FAILED: ${error.message}`;
+      this.shadowRoot.querySelector(".radar-loader")?.classList.add("stopped");
+      this._setStatus(error.message, true, 0);
+      console.error("Flight Orbit map setup failed", error);
+    }
+  }
+
+  _enableTerrain() {
+    if (this._config.terrain === false || this._terrainEnabled || !this._mapReady || !this._map) return;
+    try {
+      if (!this._map.getSource("terrainSource")) {
+        this._map.addSource("terrainSource", {
+          type: "raster-dem",
+          url: "https://tiles.mapterhorn.com/tilejson.json",
+          tileSize: 512,
+        });
+      }
+      if (!this._map.getLayer("terrain-shade")) {
+        this._map.addLayer({
+          id: "terrain-shade",
+          type: "hillshade",
+          source: "terrainSource",
+          paint: { "hillshade-exaggeration": 0.35, "hillshade-shadow-color": "#03101a", "hillshade-highlight-color": "#9fcde4" },
+        }, "flight-tracks");
+      }
+      this._map.setTerrain({ source: "terrainSource", exaggeration: 1.15 });
+      this._terrainEnabled = true;
+    } catch (error) {
+      this._setStatus(`Terrain unavailable: ${error.message}`, true, 3500);
+    }
   }
 
   _installAircraftImages() {
@@ -537,7 +558,6 @@ class FlightOrbit3DCard extends HTMLElement {
 
     const commonSymbol = {
       "symbol-placement": "point",
-      "symbol-height-offset": this._config.actual_altitude === false ? 0 : ["get", "heightMeters"],
       "icon-rotation-alignment": "map",
       "icon-pitch-alignment": "map",
       "icon-allow-overlap": true,
@@ -571,7 +591,6 @@ class FlightOrbit3DCard extends HTMLElement {
       minzoom: 7,
       layout: {
         "symbol-placement": "point",
-        "symbol-height-offset": this._config.actual_altitude === false ? 0 : ["get", "heightMeters"],
         "text-field": ["get", "mapLabel"],
         "text-font": ["Open Sans Regular"],
         "text-size": ["interpolate", ["linear"], ["zoom"], 7, 9, 13, 12],
@@ -921,6 +940,8 @@ class FlightOrbit3DCard extends HTMLElement {
       this._installFlightLayers();
       this._mapReady = true;
       this._applyData();
+      this._terrainEnabled = false;
+      this._enableTerrain();
     });
   }
 

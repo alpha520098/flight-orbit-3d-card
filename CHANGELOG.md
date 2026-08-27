@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3 — 2026-08-28
+
+- Replaced the MapLibre 6 split-worker build with the proven single-file MapLibre 5 build.
+- Changed startup so the base aircraft map opens before terrain is requested.
+- Added the card version to the loading screen and a hard eight-second startup failure state.
+
 ## 1.0.2 — 2026-08-28
 
 - Bundled MapLibre and its CSS into the HACS JavaScript file.
