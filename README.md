@@ -24,7 +24,7 @@ The card reads the integration's `flights` and `bounds` attributes. It does not 
 - HACS
 - [FlightRadar24 custom integration](https://github.com/AlexandrErohin/home-assistant-flightradar24)
 - A working **Current in area** sensor containing `flights` and `bounds` attributes
-- Internet access from the dashboard device for MapLibre, map tiles, terrain and aircraft photographs
+- Internet access from the dashboard device for map tiles, terrain and aircraft photographs
 
 The usual English entity ID is:
 
@@ -118,10 +118,8 @@ Do not reduce the FlightRadar24 integration scan interval aggressively. FlightRa
 
 ## External map resources
 
-The card loads MapLibre GL JS at runtime and uses third-party map and terrain services. The dashboard device must be able to reach:
+MapLibre is bundled into the card. The dashboard device only needs access to the third-party map and terrain services:
 
-- `unpkg.com`
-- `cdn.jsdelivr.net` (fallback if unpkg is unavailable)
 - `tiles.mapterhorn.com`
 - `server.arcgisonline.com`
 - `basemaps.cartocdn.com`
@@ -144,7 +142,7 @@ Confirm the entity currently has a populated `flights` attribute. The integratio
 ### MapLibre could not load
 
 Confirm the dashboard device can access the external map-resource domains listed above.
-Version 1.0.1 and later stop the loading animation and report which startup stage failed.
+Version 1.0.2 and later load MapLibre locally from the installed HACS file.
 
 ## Data and safety
 

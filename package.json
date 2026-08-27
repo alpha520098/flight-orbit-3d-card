@@ -1,0 +1,14 @@
+{
+  "name": "flight-orbit-3d-card",
+  "version": "1.0.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check dist/flight-orbit-3d-card.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "maplibre-gl": "6.6.0"
+  }
+}

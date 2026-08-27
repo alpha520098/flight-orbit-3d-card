@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 — 2026-08-28
+
+- Bundled MapLibre and its CSS into the HACS JavaScript file.
+- Removed the runtime CDN dependency that could leave Home Assistant on an infinite loading screen.
+- Added automatic flat-map fallback when the external terrain service is unavailable.
+
 ## 1.0.1 — 2026-08-27
 
 - Fixed the map remaining on the loading screen when a tile request is slow or blocked.
