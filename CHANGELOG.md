@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.4 — 2026-08-28
+
+- Fixed aircraft icons never appearing: MapLibre `addImage()` now receives `ImageData` instead of a raw canvas.
+- Restored true-altitude placement when the MapLibre build supports `symbol-height-offset`, with an automatic flat-symbol fallback on MapLibre 5.
+- Set Mapterhorn terrain encoding to Terrarium so elevation tiles decode correctly.
+- Fixed the CodePen proofs so the loader dismisses and the simulated aircraft render.
+
+
 ## 1.0.3 — 2026-08-28
 
 - Replaced the MapLibre 6 split-worker build with the proven single-file MapLibre 5 build.
